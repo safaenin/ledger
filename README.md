@@ -10,7 +10,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Without Firebase configuration the app shows clearly labelled sample records. Demo edits exist only in memory, disappear on refresh, and are never uploaded. Sample GSTINs are illustrative.
+Firebase configuration is required. The app starts with an empty directory and reads and writes merchant records only through your signed-in Firebase account. If configuration is missing, a setup message is shown and sign-in and merchant creation are disabled. No sample merchants or local-only storage fallback are included.
 
 ## Connect your Firebase project
 
@@ -32,7 +32,7 @@ Merchant names, GSTINs, portal IDs, contacts and notes are ordinary Firestore fi
 
 ## Validation
 
-`npm run build` checks TypeScript and creates the production build. `npm test` checks encryption round-trip, wrong-passphrase rejection, tamper detection and randomized encryption. Firestore rules should additionally be tested against your Firebase emulator before production; no live Firebase project is connected yet.
+`npm run build` checks TypeScript and creates the production build. `npm test` checks encryption round-trip, wrong-passphrase rejection, tamper detection and randomized encryption. Firestore rules should additionally be tested against your Firebase emulator before production. Firebase is configured locally; authenticated cloud operations still require verification with Google sign-in.
 
 Scope: merchant directory and GST identifying information. GST returns, filing deadlines, tax calculations, reports, teams and shared access are future features.
 

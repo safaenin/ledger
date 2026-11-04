@@ -14,7 +14,7 @@ Updated: 2026-11-04
 - Private per-user directory, not shared across users. No teams or roles yet.
 - Merchant create/read/update/delete, text search, category filter; optional email, phone and notes.
 - Merchant passwords must be retrievable, so encrypt rather than hash. Browser Web Crypto AES-GCM with PBKDF2-derived keys; explicit vault passphrase never persisted. No recovery feature.
-- User supplied Firebase web configuration in ignored `.env` and reports completing Firebase setup. Never print or commit configuration values. Demo remains available only when configuration is absent.
+- User supplied Firebase web configuration in ignored `.env` and reports completing Firebase setup. Never print or commit configuration values. Firebase is required; no demo records or local write fallback remain.
 - Visual direction: quiet ivory/gray workspace, forest green actions, compact sidebar, responsive table, native modal forms.
 - Overview shows directory metrics. Security view explains actual behavior. No filing status or GST reports invented.
 
@@ -45,3 +45,8 @@ Update this file after significant feature or architecture decisions. Do not rec
 ## Source control
 - User requested Git initialization and an initial commit. User will add the GitHub origin and push, then connect Cloudflare.
 - Keep `.env`, dependencies, builds and local preview screenshots untracked. Commit the empty `.env.example` and dependency lockfile.
+
+## Firebase-only data (2026-11-04)
+- User requested removal of all demo data and direct Firebase use. Removed sample merchant fixtures, demo UI and in-memory create/delete fallback.
+- Directory starts empty; Firestore subscriptions are the only source of merchant records. Missing configuration shows setup guidance and disables sign-in/create.
+- Removed generated preview screenshots from the workspace. Earlier references to demo testing above are historical. No Firebase records were deleted.
