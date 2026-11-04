@@ -1,0 +1,11 @@
+node_modules
+dist
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# Local preview captures and OS files
+/preview.png
+/local-test-preview.png
+.DS_Store
