@@ -9,3 +9,6 @@ dist
 /preview.png
 /local-test-preview.png
 .DS_Store
+
+# Firebase emulator logs
+*-debug.log

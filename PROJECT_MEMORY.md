@@ -50,3 +50,25 @@ Update this file after significant feature or architecture decisions. Do not rec
 - User requested removal of all demo data and direct Firebase use. Removed sample merchant fixtures, demo UI and in-memory create/delete fallback.
 - Directory starts empty; Firestore subscriptions are the only source of merchant records. Missing configuration shows setup guidance and disables sign-in/create.
 - Removed generated preview screenshots from the workspace. Earlier references to demo testing above are historical. No Firebase records were deleted.
+
+## Merchant billing and payments (2026-11-04)
+- User requested raising bills monthly/weekly/etc for individual merchants, tracking payment status and per-merchant totals.
+- Clicking a merchant now opens their billing overview; Merchant details keeps credentials/editing accessible.
+- INR assumed. Summary shows bill count, total billed, total paid, outstanding across all the merchant's bills. Filters affect the list only.
+- Manual bills support Weekly, Monthly, Quarterly, Yearly, One-time and Custom periods, description, issue/due dates and final charge. No automatic recurrence or tax calculation.
+- Partial/full receipts have date, method and optional reference; payment history is preserved. Unpaid / Part paid / Paid plus Overdue when outstanding after due date. This records payments, not money collection.
+- Integer paise for arithmetic, transactional receipt + paid total updates, UUID-based submission idempotency and overpayment protection, including simultaneous clients.
+- New subcollections: users/{uid}/merchants/{merchantId}/bills/{billId}/payments/{paymentId}. All account scoped.
+- billingStarted is optional on existing merchant documents and set atomically on first bill. It is sticky. Protects merchants from deletion once financial history exists. Issued bills and receipts are immutable except bill paid total updates linked to a new receipt. No void/refund/correction feature yet.
+- New firestore.rules must be published to the live project before billing works. Live rules were not deployed; CLI authentication was unavailable during this session.
+- Tests use an isolated demo-ledger-billing emulator, with no application sample data, no production test writes and no permanent browser QA entry point.
+
+### Billing verification
+- Production build passed; six unit tests and seven Firestore emulator integration tests passed.
+- Browser verified monthly and weekly bill creation, partial payment, remaining payment, overpayment rejection, reload persistence and status filtering with unchanged merchant totals. Desktop and 390px phone layouts checked.
+- Temporary browser QA files removed and emulator stopped. The regular local app server remains available at http://localhost:5173/. No live billing writes or live rule deployment performed.
+
+## Billing permission diagnosis (2026-11-04)
+- User reported permission-denied after saving billing rules. Verified local app project is ledger-d7173, while the open Firebase Rules tab was payroll-desk and displayed Ledger billing rules.
+- Opened the correct Ledger project's rules page for user correction; did not change Payroll Desk rules. Billing errors now display the actual connected Firebase project and link directly to its default database Rules page.
+- Confirmed the correct Ledger console still had the original merchant-only rules. Prepared the complete tested billing rules in its editor as an unpublished draft; publication awaits user confirmation. Updated app build passes.

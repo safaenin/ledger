@@ -5,7 +5,7 @@ service cloud.firestore {
    function owner() { return request.auth != null && request.auth.uid == uid; }
    function valid() {
     let d = request.resource.data;
-    return d.keys().hasOnly(['id','name','gstin','loginId','email','phone','category','notes','updatedAt','credential'])
+    return d.keys().hasOnly(['id','name','gstin','loginId','email','phone','category','notes','updatedAt','credential','billingStarted'])
       && d.keys().hasAll(['id','name','gstin','loginId','email','phone','category','notes','updatedAt'])
       && d.id == merchantId && d.name is string && d.name.size() > 0 && d.name.size() <= 200
       && d.loginId is string && d.loginId.size() > 0 && d.loginId.size() <= 200
@@ -14,6 +14,7 @@ service cloud.firestore {
       && d.phone is string && d.phone.size() <= 200
       && d.category is string && d.category.size() <= 100
       && d.notes is string && d.notes.size() <= 3000
+      && (!('billingStarted' in d) || d.billingStarted is bool)
       && d.updatedAt is string && d.updatedAt.size() <= 40
       && (!('credential' in d) || (d.credential is map
        && d.credential.keys().hasOnly(['cipher','salt','iv','version'])
@@ -23,8 +24,69 @@ service cloud.firestore {
        && d.credential.salt is string && d.credential.salt.size() == 24
        && d.credential.iv is string && d.credential.iv.size() == 16));
    }
-   allow read, delete: if owner();
-   allow create, update: if owner() && valid();
+   allow read: if owner();
+   allow delete: if owner() && !resource.data.get('billingStarted', false);
+   allow create: if owner() && valid();
+   allow update: if owner() && valid()
+     && (!resource.data.get('billingStarted', false) || request.resource.data.get('billingStarted', false));
+
+   match /bills/{billId} {
+    function billPath() {
+     return /databases/$(database)/documents/users/$(uid)/merchants/$(merchantId)/bills/$(billId);
+    }
+    function validDate(value) {
+     return value is string && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$');
+    }
+    function validBill() {
+     let d = request.resource.data;
+     return d.keys().hasAll(['id','number','description','cadence','periodStart','periodEnd','issuedOn','dueOn','amountPaise','paidPaise','currency','lastPaymentId','createdAt','updatedAt'])
+       && d.keys().hasOnly(['id','number','description','cadence','periodStart','periodEnd','issuedOn','dueOn','amountPaise','paidPaise','currency','lastPaymentId','createdAt','updatedAt'])
+       && d.id == billId && d.number is string && d.number.size() > 0 && d.number.size() <= 80
+       && d.description is string && d.description.size() > 0 && d.description.size() <= 200
+       && d.cadence in ['Weekly','Monthly','Quarterly','Yearly','One-time','Custom']
+       && validDate(d.periodStart) && validDate(d.periodEnd) && d.periodEnd >= d.periodStart
+       && validDate(d.issuedOn) && validDate(d.dueOn) && d.dueOn >= d.issuedOn
+       && d.amountPaise is int && d.amountPaise > 0 && d.amountPaise <= 100000000000
+       && d.paidPaise is int && d.paidPaise >= 0 && d.paidPaise <= d.amountPaise
+       && d.currency == 'INR'
+       && d.lastPaymentId is string && d.lastPaymentId.size() <= 64
+       && d.createdAt is string && d.createdAt.size() <= 40
+       && d.updatedAt is string && d.updatedAt.size() <= 40;
+    }
+    function linkedPayment() {
+     let d = request.resource.data;
+     let paymentPath = /databases/$(database)/documents/users/$(uid)/merchants/$(merchantId)/bills/$(billId)/payments/$(d.lastPaymentId);
+     return d.lastPaymentId.size() > 0 && !exists(paymentPath)
+       && getAfter(paymentPath).data.amountPaise == d.paidPaise - resource.data.paidPaise;
+    }
+    allow read: if owner();
+    allow create: if owner() && validBill() && request.resource.data.paidPaise == 0
+      && request.resource.data.lastPaymentId == ''
+      && getAfter(/databases/$(database)/documents/users/$(uid)/merchants/$(merchantId)).data.billingStarted == true;
+    allow update: if owner() && validBill()
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paidPaise','lastPaymentId','updatedAt'])
+      && request.resource.data.paidPaise > resource.data.paidPaise && linkedPayment();
+    allow delete: if false;
+
+    match /payments/{paymentId} {
+     function validPayment() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['id','amountPaise','paidOn','method','reference','createdAt'])
+        && d.keys().hasOnly(['id','amountPaise','paidOn','method','reference','createdAt'])
+        && d.id == paymentId && paymentId.size() <= 64
+        && d.amountPaise is int && d.amountPaise > 0 && d.amountPaise <= 100000000000
+        && validDate(d.paidOn) && d.paidOn >= get(billPath()).data.issuedOn
+        && d.method in ['UPI','Bank transfer','Cash','Cheque','Other']
+        && d.reference is string && d.reference.size() <= 200
+        && d.createdAt is string && d.createdAt.size() <= 40;
+     }
+     allow read: if owner();
+     allow create: if owner() && validPayment()
+       && getAfter(billPath()).data.lastPaymentId == paymentId
+       && getAfter(billPath()).data.paidPaise == get(billPath()).data.paidPaise + request.resource.data.amountPaise;
+     allow update, delete: if false;
+    }
+   }
   }
  }
 }
