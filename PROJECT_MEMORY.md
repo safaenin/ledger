@@ -72,3 +72,8 @@ Update this file after significant feature or architecture decisions. Do not rec
 - User reported permission-denied after saving billing rules. Verified local app project is ledger-d7173, while the open Firebase Rules tab was payroll-desk and displayed Ledger billing rules.
 - Opened the correct Ledger project's rules page for user correction; did not change Payroll Desk rules. Billing errors now display the actual connected Firebase project and link directly to its default database Rules page.
 - Confirmed the correct Ledger console still had the original merchant-only rules. Prepared the complete tested billing rules in its editor as an unpublished draft; publication awaits user confirmation. Updated app build passes.
+
+## Bill editing and deletion (2026-11-10)
+- Bill details offer Edit bill and Delete bill. Deleting requires confirmation and is allowed only before any payments are recorded.
+- Edits preserve bill numbers and receipts. The bill amount cannot fall below recorded payments, and the issue date locks after the first payment. Transactions protect against stale edits and a payment arriving during deletion.
+- Deploy the app and publish the updated rules to the Ledger Firebase project (ledger-d7173) to enable the feature in production.

@@ -63,10 +63,18 @@ service cloud.firestore {
     allow create: if owner() && validBill() && request.resource.data.paidPaise == 0
       && request.resource.data.lastPaymentId == ''
       && getAfter(/databases/$(database)/documents/users/$(uid)/merchants/$(merchantId)).data.billingStarted == true;
-    allow update: if owner() && validBill()
-      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paidPaise','lastPaymentId','updatedAt'])
-      && request.resource.data.paidPaise > resource.data.paidPaise && linkedPayment();
-    allow delete: if false;
+    function editsBillDetails() {
+     let d = request.resource.data;
+     return d.diff(resource.data).affectedKeys().hasOnly(['description','cadence','periodStart','periodEnd','issuedOn','dueOn','amountPaise','updatedAt'])
+       && (resource.data.paidPaise == 0 || d.issuedOn == resource.data.issuedOn);
+    }
+    function recordsPayment() {
+     let d = request.resource.data;
+     return d.diff(resource.data).affectedKeys().hasOnly(['paidPaise','lastPaymentId','updatedAt'])
+       && d.paidPaise > resource.data.paidPaise && linkedPayment();
+    }
+    allow update: if owner() && validBill() && (editsBillDetails() || recordsPayment());
+    allow delete: if owner() && resource.data.paidPaise == 0 && resource.data.lastPaymentId == '';
 
     match /payments/{paymentId} {
      function validPayment() {

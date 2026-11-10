@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { collection, onSnapshot, type Firestore } from 'firebase/firestore';
-import { ArrowLeft, ArrowUpRight, Building2, CalendarDays, Check, CircleDollarSign, FileText, Plus, Receipt, Search, Settings2, Wallet, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, CalendarDays, Check, CircleDollarSign, FileText, Pencil, Plus, Receipt, Search, Settings2, Trash2, Wallet, X } from 'lucide-react';
 import { billStatus, cadences, dateLabel, isOverdue, money, parseAmount, paymentMethods, periodEnd, summarize, today, type Bill, type Cadence, type Payment } from './billing';
-import { createBill, recordPayment } from './billingStore';
+import { createBill, deleteBill, editBill, recordPayment } from './billingStore';
 
 type Props = { database: Firestore; uid: string; merchant: { id: string; name: string; gstin: string; category: string }; onBack: () => void; onManage: () => void };
-type Draft = { id: string; description: string; cadence: Cadence; periodStart: string; periodEnd: string; issuedOn: string; dueOn: string; amount: string };
+type Draft = { original?: Bill; id: string; description: string; cadence: Cadence; periodStart: string; periodEnd: string; issuedOn: string; dueOn: string; amount: string };
 function newDraft(): Draft {
   const date = today();
   return { id: crypto.randomUUID(), description: '', cadence: 'Monthly', periodStart: date, periodEnd: periodEnd(date, 'Monthly'), issuedOn: date, dueOn: date, amount: '' };
@@ -43,19 +43,63 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
   function close() { if (busy) return; setDraft(null); setSelectedId(null); setRecording(false); setError(''); }
   function openBill(bill: Bill) { setSelectedId(bill.id); setRecording(false); setError(''); }
   function startPayment() { if (!selected) return; setPaymentDraft({ id: crypto.randomUUID(), amount: ((selected.amountPaise - selected.paidPaise) / 100).toFixed(2), paidOn: today(), method: 'UPI', reference: '' }); setRecording(true); setError(''); }
+  function startEdit(bill: Bill) {
+    const { id, description, cadence, periodStart, periodEnd, issuedOn, dueOn, amountPaise } = bill;
+    setDraft({ original: bill, id, description, cadence, periodStart, periodEnd, issuedOn, dueOn, amount: (amountPaise / 100).toFixed(2) });
+    setError('');
+  }
+
+  function cancelDraft() {
+    setDraft(null);
+    setError('');
+  }
+
+  async function removeBill(bill: Bill) {
+    if (busy || !window.confirm(`Permanently delete bill ${bill.number} for ${money(bill.amountPaise)}? This will remove it from your billing totals.`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await deleteBill(db, uid, merchant.id, bill);
+      setSelectedId(null);
+      setNotice('Bill deleted');
+    } catch (e) {
+      setError(billChangeError(e, 'Could not delete bill. Please try again.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function billChangeError(error: unknown, fallback: string) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'permission-denied') {
+      return `Billing access was denied. Check that the latest Firestore rules are published in Firebase project ${firebaseProjectId || '(unknown)'}.`;
+    }
+    return error instanceof Error ? error.message : fallback;
+  }
+
   async function submitBill(event: FormEvent) {
     event.preventDefault(); if (!draft || !db || busy) return;
     setBusy(true); setError('');
     try {
-      const timestamp = new Date().toISOString();
-      await createBill(db, uid, merchant.id, {
-        id: draft.id, number: `BILL-${draft.issuedOn.replaceAll('-', '')}-${draft.id.slice(0, 8).toUpperCase()}`,
-        description: draft.description.trim(), cadence: draft.cadence, periodStart: draft.periodStart, periodEnd: draft.periodEnd,
-        issuedOn: draft.issuedOn, dueOn: draft.dueOn, amountPaise: parseAmount(draft.amount), paidPaise: 0,
-        currency: 'INR', lastPaymentId: '', createdAt: timestamp, updatedAt: timestamp,
-      });
-      setDraft(null); setNotice('Bill raised successfully');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not raise bill. Please try again.'); }
+      const changes = {
+        description: draft.description.trim(), cadence: draft.cadence,
+        periodStart: draft.periodStart, periodEnd: draft.periodEnd,
+        issuedOn: draft.issuedOn, dueOn: draft.dueOn, amountPaise: parseAmount(draft.amount),
+      };
+      if (draft.original) {
+        await editBill(db, uid, merchant.id, draft.original, changes);
+        setNotice('Bill updated');
+      } else {
+        const timestamp = new Date().toISOString();
+        await createBill(db, uid, merchant.id, {
+          ...changes, id: draft.id, number: `BILL-${draft.issuedOn.replaceAll('-', '')}-${draft.id.slice(0, 8).toUpperCase()}`,
+          paidPaise: 0, currency: 'INR', lastPaymentId: '', createdAt: timestamp, updatedAt: timestamp,
+        });
+        setNotice('Bill raised successfully');
+      }
+      setDraft(null);
+    } catch (e) {
+      setError(billChangeError(e, 'Could not save bill. Please try again.'));
+    }
     finally { setBusy(false); }
   }
   async function submitPayment(event: FormEvent) {
@@ -67,6 +111,7 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not record payment. Please try again.'); }
     finally { setBusy(false); }
   }
+  const issueDateLocked = !!draft?.original && (selected?.paidPaise ?? draft.original.paidPaise) > 0;
   const totals = summarize(bills), overdue = bills.filter(b => isOverdue(b));
   const visible = bills.filter(b => `${b.number} ${b.description}`.toLowerCase().includes(search.toLowerCase()) && (filter === 'All bills' || (filter === 'Overdue' ? isOverdue(b) : billStatus(b) === filter)));
   return <section className="billing-page">
@@ -85,10 +130,69 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
       <div className="table-footer">{loaded ? `Showing ${visible.length} of ${bills.length} bills` : 'Waiting for billing data'}<span>Balances update as payments are recorded</span></div>
     </section>
     <div className="billing-help"><CalendarDays size={18} /><p>Raise bills for weekly, monthly, or custom service periods. Recording a payment updates your records; it does not collect money. Bills are raised manually.</p></div>
-    <dialog ref={dialogRef} className="billing-dialog" aria-label={draft ? 'Raise a bill' : 'Bill and payment details'} onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === e.currentTarget) close(); }}><div className="modal"><button className="close" disabled={busy} aria-label="Close billing dialog" onClick={close}><X size={20} /></button>
-      {draft ? <form onSubmit={submitBill}><div className="modal-icon"><Receipt size={25} /></div><h2>Raise a bill</h2><p>For {merchant.name}. Enter the final amount you are charging.</p><label>Description<input required maxLength={200} placeholder="Services for the billing period" value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} /></label><div className="form-grid"><label>Billing frequency<select value={draft.cadence} onChange={e => { const cadence = e.target.value as Cadence; setDraft({ ...draft, cadence, periodEnd: periodEnd(draft.periodStart, cadence) }); }}>{cadences.map(c => <option key={c}>{c}</option>)}</select></label><label>Bill amount (₹)<input required type="text" inputMode="decimal" placeholder="0.00" value={draft.amount} onChange={e => setDraft({ ...draft, amount: e.target.value })} /></label><label>Period start<input required type="date" value={draft.periodStart} onChange={e => setDraft({ ...draft, periodStart: e.target.value, periodEnd: periodEnd(e.target.value, draft.cadence) })} /></label><label>Period end<input required type="date" min={draft.periodStart} value={draft.periodEnd} onChange={e => setDraft({ ...draft, periodEnd: e.target.value })} /></label><label>Issue date<input required type="date" max={today()} value={draft.issuedOn} onChange={e => setDraft({ ...draft, issuedOn: e.target.value, dueOn: draft.dueOn < e.target.value ? e.target.value : draft.dueOn })} /></label><label>Due date<input required type="date" min={draft.issuedOn} value={draft.dueOn} onChange={e => setDraft({ ...draft, dueOn: e.target.value })} /></label></div><div className="billing-form-note">New bills start as Unpaid. Final bill amounts include any taxes you have already calculated. Issued bills and recorded payments are kept as history.</div>{error && <div className="error" role="alert">{error}</div>}<div className="modal-actions"><button className="secondary" type="button" onClick={close} disabled={busy}>Cancel</button><button className="primary" disabled={busy}>{busy ? 'Saving bill…' : 'Raise bill'}<Check size={16} /></button></div></form> : selected && <><div className="modal-icon"><FileText size={25} /></div><h2>{selected.description}</h2><p>{selected.number} · {merchant.name}</p><div className="bill-detail-top"><span className={`payment-status ${billStatus(selected).toLowerCase().replace(' ', '-')}`}>{billStatus(selected)}</span>{isOverdue(selected) && <span className="overdue-label">Overdue</span>}<span>{selected.cadence}</span></div><div className="bill-detail-amounts"><div><span>Bill amount</span><strong>{money(selected.amountPaise)}</strong></div><div><span>Paid</span><strong>{money(selected.paidPaise)}</strong></div><div><span>Balance</span><strong>{money(selected.amountPaise - selected.paidPaise)}</strong></div></div><dl><div><dt>Service period</dt><dd>{dateLabel(selected.periodStart)} – {dateLabel(selected.periodEnd)}</dd></div><div><dt>Issued on</dt><dd>{dateLabel(selected.issuedOn)}</dd></div><div><dt>Due on</dt><dd>{dateLabel(selected.dueOn)}</dd></div></dl>
+    <dialog ref={dialogRef} className="billing-dialog" aria-label={draft?.original ? 'Edit bill' : draft ? 'Raise a bill' : 'Bill and payment details'} onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === e.currentTarget) close(); }}><div className="modal"><button className="close" disabled={busy} aria-label="Close billing dialog" onClick={close}><X size={20} /></button>
+      {draft ? <form onSubmit={submitBill}>
+        <div className="modal-icon"><Receipt size={25} /></div>
+        <h2>{draft.original ? 'Edit bill' : 'Raise a bill'}</h2>
+        <p>{draft.original ? `${draft.original.number} · ${merchant.name}` : `For ${merchant.name}. Enter the final amount you are charging.`}</p>
+        <label>Description
+          <input required maxLength={200} placeholder="Services for the billing period" value={draft.description}
+            onChange={e => setDraft({ ...draft, description: e.target.value })} />
+        </label>
+        <div className="form-grid">
+          <label>Billing frequency
+            <select value={draft.cadence} onChange={e => {
+              const cadence = e.target.value as Cadence;
+              setDraft({ ...draft, cadence, periodEnd: periodEnd(draft.periodStart, cadence) });
+            }}>
+              {cadences.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </label>
+          <label>Bill amount (₹)
+            <input required type="text" inputMode="decimal" placeholder="0.00" value={draft.amount}
+              onChange={e => setDraft({ ...draft, amount: e.target.value })} />
+          </label>
+          <label>Period start
+            <input required type="date" value={draft.periodStart}
+              onChange={e => setDraft({ ...draft, periodStart: e.target.value, periodEnd: periodEnd(e.target.value, draft.cadence) })} />
+          </label>
+          <label>Period end
+            <input required type="date" min={draft.periodStart} value={draft.periodEnd}
+              onChange={e => setDraft({ ...draft, periodEnd: e.target.value })} />
+          </label>
+          <label>Issue date
+            <input required readOnly={issueDateLocked} type="date" max={today()} value={draft.issuedOn}
+              onChange={e => {
+                const issuedOn = e.target.value;
+                setDraft({ ...draft, issuedOn, dueOn: draft.dueOn < issuedOn ? issuedOn : draft.dueOn });
+              }} />
+          </label>
+          <label>Due date
+            <input required type="date" min={draft.issuedOn} value={draft.dueOn}
+              onChange={e => setDraft({ ...draft, dueOn: e.target.value })} />
+          </label>
+        </div>
+        <div className="billing-form-note">
+          {issueDateLocked
+            ? 'The issue date is locked because this bill has payments. The bill amount must cover the payments already recorded.'
+            : 'Enter the final amount you are charging, including any applicable taxes.'}
+        </div>
+        {error && <div className="error" role="alert">{error}</div>}
+        <div className="modal-actions">
+          <button className="secondary" type="button" onClick={cancelDraft} disabled={busy}>Cancel</button>
+          <button className="primary" disabled={busy}>{busy ? 'Saving bill…' : draft.original ? 'Save changes' : 'Raise bill'}<Check size={16} /></button>
+        </div>
+      </form> : selected && <><div className="modal-icon"><FileText size={25} /></div><h2>{selected.description}</h2><p>{selected.number} · {merchant.name}</p><div className="bill-detail-top"><span className={`payment-status ${billStatus(selected).toLowerCase().replace(' ', '-')}`}>{billStatus(selected)}</span>{isOverdue(selected) && <span className="overdue-label">Overdue</span>}<span>{selected.cadence}</span></div><div className="bill-detail-amounts"><div><span>Bill amount</span><strong>{money(selected.amountPaise)}</strong></div><div><span>Paid</span><strong>{money(selected.paidPaise)}</strong></div><div><span>Balance</span><strong>{money(selected.amountPaise - selected.paidPaise)}</strong></div></div><dl><div><dt>Service period</dt><dd>{dateLabel(selected.periodStart)} – {dateLabel(selected.periodEnd)}</dd></div><div><dt>Issued on</dt><dd>{dateLabel(selected.issuedOn)}</dd></div><div><dt>Due on</dt><dd>{dateLabel(selected.dueOn)}</dd></div></dl>
+      {!recording && <div className="modal-actions bill-actions">
+        <button className="secondary" disabled={busy} onClick={() => startEdit(selected)}><Pencil size={15} /> Edit bill</button>
+        {selected.paidPaise === 0 && selected.lastPaymentId === '' &&
+          <button className="secondary danger" disabled={busy} onClick={() => void removeBill(selected)}><Trash2 size={15} /> {busy ? 'Deleting…' : 'Delete bill'}</button>}
+      </div>}
+      {!recording && selected.paidPaise > 0 && <p className="billing-form-note">Bills with recorded payments are kept with their payment history.</p>}
+      {!recording && error && <div className="error" role="alert">{error}</div>}
       {recording ? <form className="payment-form" onSubmit={submitPayment}><h3>Record a payment</h3><div className="form-grid"><label>Payment amount (₹)<input required inputMode="decimal" type="text" value={paymentDraft.amount} onChange={e => setPaymentDraft({ ...paymentDraft, amount: e.target.value })} /></label><label>Payment date<input required type="date" min={selected.issuedOn} max={today()} value={paymentDraft.paidOn} onChange={e => setPaymentDraft({ ...paymentDraft, paidOn: e.target.value })} /></label><label>Payment method<select value={paymentDraft.method} onChange={e => setPaymentDraft({ ...paymentDraft, method: e.target.value as Payment['method'] })}>{paymentMethods.map(method => <option key={method}>{method}</option>)}</select></label><label>Reference (optional)<input maxLength={200} placeholder="UTR, receipt number…" value={paymentDraft.reference} onChange={e => setPaymentDraft({ ...paymentDraft, reference: e.target.value })} /></label></div>{error && <div className="error" role="alert">{error}</div>}<div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={() => { setRecording(false); setError(''); }}>Cancel</button><button className="primary" disabled={busy}>{busy ? 'Recording…' : 'Confirm payment'}<Check size={16} /></button></div></form> : selected.paidPaise < selected.amountPaise && <button className="primary record-payment" onClick={startPayment}><Plus size={16} /> Record payment</button>}
       <section className="payment-history"><h3>Payment history <span>{paymentsLoaded ? payments.length : '…'}</span></h3>{paymentsError ? <p className="overdue-label" role="alert">{paymentsError}</p> : !paymentsLoaded ? <p>Loading payments…</p> : !payments.length ? <p>No payments recorded for this bill yet.</p> : payments.map(payment => <article key={payment.id}><span className="payment-check"><Check size={15} /></span><div><strong>{money(payment.amountPaise)}</strong><p>{dateLabel(payment.paidOn)} · {payment.method}</p>{payment.reference && <p className="payment-reference">{payment.reference}</p>}</div><span>Received</span></article>)}</section></>}
+      {!draft && selectedId && !selected && <p role="status">This bill is no longer available. Close this window to return to the bill list.</p>}
     </div></dialog>
   </section>;
 }

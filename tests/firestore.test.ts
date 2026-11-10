@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch, type Firestore } from 'firebase/firestore';
-import { createBill, deleteUnbilledMerchant, recordPayment } from '../src/billingStore.ts';
+import { createBill, deleteBill, deleteUnbilledMerchant, editBill, recordPayment } from '../src/billingStore.ts';
 import { summarize, type Bill, type Payment } from '../src/billing.ts';
 let env: RulesTestEnvironment;
 before(async () => { env = await initializeTestEnvironment({ projectId: 'demo-ledger-billing', firestore: { host: '127.0.0.1', port: 8085, rules: readFileSync('firestore.rules', 'utf8') } }); });
@@ -46,12 +46,14 @@ test('accounts cannot access another account’s bills or payments', async () =>
  await setup(); const other = database('other'); const anonymous = env.unauthenticatedContext().firestore() as unknown as Firestore;
  for (const db of [other, anonymous]) {
   await assertFails(getDoc(billRef(db)));
+  await assertFails(updateDoc(billRef(db), { description: 'Unauthorized edit' }));
+  await assertFails(deleteDoc(billRef(db)));
   await assertFails(getDocs(collection(merchantRef(db), 'bills')));
   await assertFails(getDocs(collection(billRef(db), 'payments')));
   await assertFails(setDoc(doc(billRef(db), 'payments', 'attack'), payment('attack', 1)));
  }
 });
-test('rules enforce atomic receipts, immutable bills and no overpayments', async () => {
+test('rules enforce atomic receipts, preserve bill identity, and reject overpayments', async () => {
  const db = await setup(); const ref = billRef(db);
  await assertFails(updateDoc(ref, { paidPaise: 1000, lastPaymentId: 'missing' }));
  await assertFails(setDoc(doc(ref, 'payments', 'unlinked'), payment('unlinked', 1000)));
@@ -63,9 +65,11 @@ test('rules enforce atomic receipts, immutable bills and no overpayments', async
  mismatch.set(doc(ref, 'payments', 'mismatch'), payment('mismatch', 1000));
  mismatch.update(ref, { paidPaise: 500, lastPaymentId: 'mismatch' });
  await assertFails(mismatch.commit());
- await assertFails(updateDoc(ref, { amountPaise: 20000 }));
- await assertFails(deleteDoc(ref));
+ await assertFails(updateDoc(ref, { number: 'RENUMBERED' }));
  await recordPayment(db, 'owner', 'merchant-one', 'bill-one', payment('valid', 1000));
+ await assertFails(updateDoc(ref, { amountPaise: 999 }));
+ await assertFails(updateDoc(ref, { issuedOn: '2026-01-03' }));
+ await assertFails(deleteDoc(ref));
  await assertFails(updateDoc(doc(ref, 'payments', 'valid'), { amountPaise: 2000 }));
  await assertFails(deleteDoc(doc(ref, 'payments', 'valid')));
  await assertFails(updateDoc(ref, { paidPaise: 2000, lastPaymentId: 'valid' }));
@@ -90,4 +94,41 @@ test('rules reject orphan bills, fractional amounts, and inverted periods', asyn
  await updateDoc(merchantRef(db), { billingStarted: true });
  for (const change of [{ amountPaise: -1 }, { amountPaise: 1.5 }, { paidPaise: 1 }, { periodEnd: '2025-01-01' }, { dueOn: '2025-01-01' }, { currency: 'USD' }]) await assertFails(setDoc(billRef(db), { ...bill(), ...change }));
  await assert.rejects(createBill(db, 'owner', 'does-not-exist', bill()), /no longer exists/);
+});
+
+test('bill edits preserve receipts, recalculate totals and reject stale changes', async () => {
+ const db = await setup();
+ const original = bill();
+ const changes = {
+  description: 'Corrected service amount', cadence: original.cadence,
+  periodStart: original.periodStart, periodEnd: original.periodEnd,
+  issuedOn: original.issuedOn, dueOn: original.dueOn, amountPaise: 12000,
+ };
+ await recordPayment(db, 'owner', 'merchant-one', 'bill-one', payment('first', 4000));
+ await editBill(db, 'owner', 'merchant-one', original, changes);
+ const updated = (await getDoc(billRef(db))).data() as Bill;
+ assert.equal(updated.number, original.number);
+ assert.equal(updated.lastPaymentId, 'first');
+ assert.deepEqual(summarize([updated]), { count: 1, billed: 12000, paid: 4000, outstanding: 8000 });
+ await assert.rejects(editBill(db, 'owner', 'merchant-one', updated, { ...changes, amountPaise: 3999 }), /payments already recorded/);
+ await assert.rejects(editBill(db, 'owner', 'merchant-one', original, { ...changes, description: 'Stale edit' }), /changed while/);
+ await assert.rejects(deleteBill(db, 'owner', 'merchant-one', updated), /recorded payments/);
+});
+
+test('deleting an unpaid bill removes it from totals and cannot orphan a concurrent payment', async () => {
+ const db = await setup();
+ await deleteBill(db, 'owner', 'merchant-one', bill());
+ assert.equal((await getDocs(collection(merchantRef(db), 'bills'))).size, 0);
+
+ const second = bill('second');
+ await createBill(db, 'owner', 'merchant-one', second);
+ const outcomes = await Promise.allSettled([
+  deleteBill(db, 'owner', 'merchant-one', second),
+  recordPayment(db, 'owner', 'merchant-one', second.id, payment('concurrent', 1000)),
+ ]);
+ assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+ const remaining = await getDoc(billRef(db, second.id));
+ const receipts = await getDocs(collection(billRef(db, second.id), 'payments'));
+ assert.equal(receipts.size, remaining.exists() ? 1 : 0);
+ if (remaining.exists()) assert.equal(remaining.data().paidPaise, 1000);
 });

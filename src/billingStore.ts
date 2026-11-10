@@ -41,6 +41,41 @@ export async function recordPayment(db: Firestore, uid: string, merchantId: stri
     if (!committed?.exists() || !samePayment(committed.data() as Payment, payment)) throw error;
   }
 }
+
+type BillChanges = Pick<Bill, 'description' | 'cadence' | 'periodStart' | 'periodEnd' | 'issuedOn' | 'dueOn' | 'amountPaise'>;
+
+export async function editBill(db: Firestore, uid: string, merchantId: string, original: Bill, changes: BillChanges) {
+  const billRef = doc(db, 'users', uid, 'merchants', merchantId, 'bills', original.id);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(billRef);
+    if (!snapshot.exists()) throw new Error('This bill no longer exists.');
+    const current = snapshot.data() as Bill;
+    const updated = { ...current, ...changes };
+    validateBill(updated);
+    if (updated.amountPaise < current.paidPaise) throw new Error('The bill amount cannot be less than the payments already recorded.');
+    if (current.paidPaise > 0 && updated.issuedOn !== current.issuedOn) {
+      throw new Error('The issue date is locked once a payment is recorded.');
+    }
+    if (sameBill(current, updated)) return;
+    if (!sameBill(current, original)) throw new Error('This bill changed while you were editing. Close and reopen it to see the latest details.');
+    transaction.update(billRef, { ...changes, updatedAt: new Date().toISOString() });
+  });
+}
+
+export async function deleteBill(db: Firestore, uid: string, merchantId: string, original: Bill) {
+  const billRef = doc(db, 'users', uid, 'merchants', merchantId, 'bills', original.id);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(billRef);
+    if (!snapshot.exists()) return;
+    const current = snapshot.data() as Bill;
+    if (current.paidPaise !== 0 || current.lastPaymentId !== '') {
+      throw new Error('This bill has recorded payments and cannot be deleted.');
+    }
+    if (!sameBill(current, original)) throw new Error('This bill changed. Review its latest details before deleting.');
+    transaction.delete(billRef);
+  });
+}
+
 export async function deleteUnbilledMerchant(db: Firestore, uid: string, merchantId: string) {
   const merchantRef = doc(db, 'users', uid, 'merchants', merchantId);
   await runTransaction(db, async transaction => {
