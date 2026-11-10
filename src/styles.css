@@ -23,3 +23,6 @@
 .bill-print-hint { margin-top: 8px; font-size: 12px; }
 .bill-print-actions { margin: 14px 0; }
 .bill-print-preview { display: block; width: 100%; height: 420px; border: 1px solid #dbe5df; border-radius: 8px; background: white; }
+.firm-settings { max-width: 620px; }
+.firm-settings-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.firm-settings-actions [role="status"] { color: #305649; font-size: 12px; }

@@ -6,7 +6,6 @@ main { max-width: 210mm; min-height: 220mm; margin: 0 auto; padding: 7%; backgro
 header { border-top: 5px solid #1e5848; border-bottom: 1px solid #ccd9d2; padding: 20px 0 16px; }
 h1 { font-size: 31px; line-height: 1.15; margin: 0 0 6px; }
 p, dl, dd { margin: 0; }
-.sender { color: #1e5848; font-weight: 650; margin-bottom: 8px; }
 .reference, .services p { color: #485e54; }
 .overview { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin: 24px 0; }
 h2 { margin: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #305649; }
@@ -37,3 +36,7 @@ footer { border-top: 1px solid #ccd9d2; margin-top: 24px; padding-top: 12px; whi
   h2 { break-after: avoid; }
   thead { display: table-header-group; }
 }
+
+.firm { margin-bottom: 16px; }
+.firm h1 { font-size: 36px; color: #1e5848; }
+.firm-address { white-space: pre-line; color: #485e54; }

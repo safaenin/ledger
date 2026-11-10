@@ -1,6 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
  match /databases/{database}/documents {
+  match /users/{uid}/settings/firm {
+   function owner() { return request.auth != null && request.auth.uid == uid; }
+   allow read: if owner();
+   allow create, update: if owner()
+     && request.resource.data.keys().hasOnly(['name', 'address'])
+     && request.resource.data.name is string
+     && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 100
+     && request.resource.data.address is string
+     && request.resource.data.address.size() > 0 && request.resource.data.address.size() <= 500;
+  }
   match /users/{uid}/merchants/{merchantId} {
    function owner() { return request.auth != null && request.auth.uid == uid; }
    function valid() {

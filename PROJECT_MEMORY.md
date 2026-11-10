@@ -80,5 +80,6 @@ Update this file after significant feature or architecture decisions. Do not rec
 
 ## Bill print and PDF export
 - Open a bill and choose Print bill for a live A4 preview. The browser print dialog offers Save as PDF or a printer.
-- Customize the title, business name, footer note, and whether to include GSTIN, merchant contact details, and payment history with references. Contact details and payment history are off by default.
+- Save the firm name and multiline address in Settings for reuse on every bill. The firm name is the main heading, with the bill number used as the heading when firm details have not been saved. Customize the footer note and whether to include GSTIN, merchant contact details, and payment history with references. Contact details and payment history are off by default.
 - The document renders from the selected bill and merchant details in the browser. Portal login IDs, credentials, and internal merchant notes are excluded.
+- Firm details are stored per account at users/{uid}/settings/firm. Publish the updated Firestore rules to ledger-d7173 before using the Settings tab in production.

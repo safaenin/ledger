@@ -4,14 +4,15 @@ import { ArrowLeft, ArrowUpRight, CalendarDays, Check, CircleDollarSign, FileTex
 import { billStatus, cadences, dateLabel, isOverdue, money, parseAmount, paymentMethods, periodEnd, summarize, today, type Bill, type Cadence, type Payment } from './billing';
 import { createBill, deleteBill, editBill, recordPayment } from './billingStore';
 import BillPrint from './BillPrint';
+import type { FirmProfile } from './FirmSettings';
 
-type Props = { database: Firestore; uid: string; merchant: { id: string; name: string; gstin: string; category: string; email?: string; phone?: string }; onBack: () => void; onManage: () => void };
+type Props = { database: Firestore; uid: string; merchant: { id: string; name: string; gstin: string; category: string; email?: string; phone?: string }; firmProfile: FirmProfile | null; onBack: () => void; onManage: () => void };
 type Draft = { original?: Bill; id: string; description: string; cadence: Cadence; periodStart: string; periodEnd: string; issuedOn: string; dueOn: string; amount: string };
 function newDraft(): Draft {
   const date = today();
   return { id: crypto.randomUUID(), description: '', cadence: 'Monthly', periodStart: date, periodEnd: periodEnd(date, 'Monthly'), issuedOn: date, dueOn: date, amount: '' };
 }
-export default function MerchantBilling({ database: db, uid, merchant, onBack, onManage }: Props) {
+export default function MerchantBilling({ database: db, uid, merchant, firmProfile, onBack, onManage }: Props) {
   const [bills, setBills] = useState<Bill[]>([]);
   const firebaseProjectId = db.app.options.projectId;
   const rulesUrl = firebaseProjectId ? `https://console.firebase.google.com/project/${encodeURIComponent(firebaseProjectId)}/firestore/databases/-default-/security/rules` : null;
@@ -185,7 +186,7 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
           <button className="primary" disabled={busy}>{busy ? 'Saving bill…' : draft.original ? 'Save changes' : 'Raise bill'}<Check size={16} /></button>
         </div>
       </form> : selected && (printing ? <BillPrint
-        bill={selected} merchant={merchant} payments={payments}
+        bill={selected} merchant={merchant} firmProfile={firmProfile} payments={payments}
         historyAvailable={paymentsLoaded && !paymentsError}
         onBack={() => setPrinting(false)}
       /> : <><div className="modal-icon"><FileText size={25} /></div><h2>{selected.description}</h2><p>{selected.number} · {merchant.name}</p><div className="bill-detail-top"><span className={`payment-status ${billStatus(selected).toLowerCase().replace(' ', '-')}`}>{billStatus(selected)}</span>{isOverdue(selected) && <span className="overdue-label">Overdue</span>}<span>{selected.cadence}</span></div><div className="bill-detail-amounts"><div><span>Bill amount</span><strong>{money(selected.amountPaise)}</strong></div><div><span>Paid</span><strong>{money(selected.paidPaise)}</strong></div><div><span>Balance</span><strong>{money(selected.amountPaise - selected.paidPaise)}</strong></div></div><dl><div><dt>Service period</dt><dd>{dateLabel(selected.periodStart)} – {dateLabel(selected.periodEnd)}</dd></div><div><dt>Issued on</dt><dd>{dateLabel(selected.issuedOn)}</dd></div><div><dt>Due on</dt><dd>{dateLabel(selected.dueOn)}</dd></div></dl>

@@ -1,22 +1,37 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BookOpen, LayoutDashboard, Users, ShieldCheck, Search, Plus, ArrowUpRight, ChevronRight, X, LockKeyhole, LogOut, MoreHorizontal, Building2, Check, Eye, Pencil, Trash2 } from 'lucide-react';
+import { BookOpen, LayoutDashboard, Users, ShieldCheck, Search, Plus, ArrowUpRight, ChevronRight, X, LockKeyhole, LogOut, MoreHorizontal, Building2, Check, Eye, Pencil, Trash2, Settings } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, db, configured, login, logout } from './firebase';
 import { seal, unseal, type Sealed } from './vault';
 import './styles.css';
 import MerchantBilling from './MerchantBilling';
+import FirmSettings, { type FirmProfile } from './FirmSettings';
 import { deleteUnbilledMerchant } from './billingStore';
 type Merchant = { id: string; name: string; gstin: string; loginId: string; email: string; phone: string; category: string; notes: string; updatedAt: string; credential?: Sealed; billingStarted?: boolean };
 const blank = (): Merchant => ({id:crypto.randomUUID(),name:'',gstin:'',loginId:'',email:'',phone:'',category:'Retail',notes:'',updatedAt:new Date().toISOString()});
 function App(){
  const [user,setUser]=useState<User|null>(null), [merchants,setMerchants]=useState<Merchant[]>([]), [search,setSearch]=useState(''), [category,setCategory]=useState('All categories'), [view,setView]=useState('Merchants'), [form,setForm]=useState<Merchant|null>(null), [detail,setDetail]=useState<Merchant|null>(null), [password,setPassword]=useState(''), [passphrase,setPassphrase]=useState(''), [revealed,setRevealed]=useState(''), [signingIn,setSigningIn]=useState(false), [busy,setBusy]=useState(false), [error,setError]=useState(''), [toast,setToast]=useState(''), [loading,setLoading]=useState(configured);
  const [selectedMerchantId,setSelectedMerchantId]=useState<string|null>(null);
+ const [firmSettings, setFirmSettings] = useState<{ uid: string; profile: FirmProfile | null; error?: string } | null>(null);
+ const accountSettings = user && firmSettings?.uid === user.uid ? firmSettings : null;
  const selectedMerchant=merchants.find(m=>m.id===selectedMerchantId);
  const dialogRef=useRef<HTMLDialogElement>(null);
- useEffect(()=>auth?onAuthStateChanged(auth,u=>{setUser(u);setSelectedMerchantId(null);setMerchants([]);setLoading(!!u);setDetail(null);setForm(null);setRevealed('');setPassphrase('');}):undefined,[]);
+ useEffect(()=>auth?onAuthStateChanged(auth,u=>{setUser(u);setFirmSettings(null);setSelectedMerchantId(null);setMerchants([]);setLoading(!!u);setDetail(null);setForm(null);setRevealed('');setPassphrase('');}):undefined,[]);
  useEffect(()=>{if(!db||!user)return;return onSnapshot(collection(db,'users',user.uid,'merchants'),s=>{setMerchants(s.docs.map(d=>({...d.data(),id:d.id}) as Merchant));setLoading(false)},()=>{setError('Unable to load merchants. Check your connection and Firestore rules.');setLoading(false)});},[user]);
+ useEffect(() => {
+  if (!db || !user) return;
+  const uid = user.uid;
+  return onSnapshot(doc(db, 'users', uid, 'settings', 'firm'), snapshot => {
+    setFirmSettings({ uid, profile: snapshot.exists() ? snapshot.data() as FirmProfile : null });
+  }, error => {
+    const message = error.code === 'permission-denied'
+      ? `Firm settings are unavailable. Publish the latest Firestore rules in Firebase project ${db?.app.options.projectId}, then reload Ledger.`
+      : 'Could not load firm settings. Check your connection and reload Ledger.';
+    setFirmSettings({ uid, profile: null, error: message });
+  });
+ }, [user]);
  useEffect(()=>{if(form||detail){dialogRef.current?.showModal()}else{dialogRef.current?.close()}},[form,detail]);
  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)},[toast]);
  useEffect(()=>{if(!revealed)return;const t=setTimeout(()=>setRevealed(''),20000);return()=>clearTimeout(t)},[revealed]);
@@ -48,10 +63,17 @@ function App(){
  async function reveal(){if(!detail?.credential)return;setBusy(true);try{setRevealed(await unseal(detail.credential,passphrase));setPassphrase('');setError('')}catch{setError('Unable to unlock. Check your vault passphrase.')}finally{setBusy(false)}}
  const filtered=merchants.filter(m=>(category==='All categories'||m.category===category)&&`${m.name} ${m.gstin} ${m.loginId}`.toLowerCase().includes(search.toLowerCase()));
  const secured=merchants.filter(m=>m.credential).length;
- return <div className="app"><aside className="sidebar"><a className="brand" href="#" aria-label="Ledger home"><span className="brand-icon"><BookOpen size={23}/></span>ledger<span className="brand-dot">.</span></a><div className="workspace"><span className="workspace-avatar">W</span><div>My workspace<small>Merchant management</small></div><ChevronRight size={15}/></div><div className="nav-label">WORKSPACE</div><nav>{[{name:'Overview',icon:LayoutDashboard},{name:'Merchants',icon:Users},{name:'Security',icon:ShieldCheck}].map(({name,icon:Icon})=><button className={view===name?'active':''} key={name} onClick={()=>{setView(name);setSearch('');setSelectedMerchantId(null)}}><Icon size={19}/>{name}{name==='Merchants'&&<span className="nav-count">{merchants.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="safe-note"><ShieldCheck size={22}/><strong>A little peace of mind.</strong><p>Merchant passwords are encrypted before they leave your device.</p><button onClick={()=>setView('Security')}>Explore security <ArrowUpRight size={14}/></button></div><div className="profile"><span className="avatar">{user?.displayName?.[0]||'W'}</span><div>{user?.displayName||'Your workspace'}<small>{user?'Google account':'Signed out'}</small></div>{user&&<button aria-label="Sign out" onClick={()=>void logout().catch(()=>setError('Could not sign out.'))}><LogOut size={17}/></button>}</div></div></aside>
+ return <div className="app"><aside className="sidebar"><a className="brand" href="#" aria-label="Ledger home"><span className="brand-icon"><BookOpen size={23}/></span>ledger<span className="brand-dot">.</span></a><div className="workspace"><span className="workspace-avatar">W</span><div>My workspace<small>Merchant management</small></div><ChevronRight size={15}/></div><div className="nav-label">WORKSPACE</div><nav>{[{name:'Overview',icon:LayoutDashboard},{name:'Merchants',icon:Users},{name:'Security',icon:ShieldCheck},{name:'Settings',icon:Settings}].map(({name,icon:Icon})=><button className={view===name?'active':''} key={name} onClick={()=>{setView(name);setSearch('');setSelectedMerchantId(null)}}><Icon size={19}/>{name}{name==='Merchants'&&<span className="nav-count">{merchants.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="safe-note"><ShieldCheck size={22}/><strong>A little peace of mind.</strong><p>Merchant passwords are encrypted before they leave your device.</p><button onClick={()=>setView('Security')}>Explore security <ArrowUpRight size={14}/></button></div><div className="profile"><span className="avatar">{user?.displayName?.[0]||'W'}</span><div>{user?.displayName||'Your workspace'}<small>{user?'Google account':'Signed out'}</small></div>{user&&<button aria-label="Sign out" onClick={()=>void logout().catch(()=>setError('Could not sign out.'))}><LogOut size={17}/></button>}</div></div></aside>
  <main><header><div className="breadcrumb">Workspace <ChevronRight size={14}/><span>{selectedMerchant?selectedMerchant.name:view}</span></div><div className="header-right"><span className="private-badge"><span/> Private workspace</span>{!user&&<button className="google-button" disabled={!configured||signingIn} onClick={()=>void signIn()}><span className="google-g">G</span> {signingIn?'Connecting…':'Sign in with Google'}</button>}{user&&<span className="avatar">{user.displayName?.[0]||'U'}</span>}</div></header>
  <div className="content">{!configured&&<div className="workspace-banner" role="alert"><strong>Firebase setup required.</strong> Connect your Firebase project to sign in and manage merchants.</div>}{configured&&!user&&<div className="workspace-banner"><strong>Sign in with Google to access your private merchant records.</strong></div>}
- {selectedMerchant&&user&&db?<MerchantBilling database={db} key={`${user.uid}:${selectedMerchant.id}`} uid={user.uid} merchant={selectedMerchant} onBack={()=>setSelectedMerchantId(null)} onManage={()=>{setDetail(selectedMerchant);setError('')}}/>:<>
+ {selectedMerchant&&user&&db?<MerchantBilling database={db} key={`${user.uid}:${selectedMerchant.id}`} uid={user.uid} merchant={selectedMerchant} firmProfile={accountSettings?.profile ?? null} onBack={()=>setSelectedMerchantId(null)} onManage={()=>{setDetail(selectedMerchant);setError('')}}/>:view==='Settings'?<>
+   <div className="page-heading"><div><h1>Settings</h1><p>Manage the firm information used on your bills.</p></div></div>
+   {error && <div className="error" role="alert">{error}</div>}
+   {!user || !db ? <p>Sign in to manage your firm details.</p>
+     : accountSettings?.error ? <p className="error" role="alert">{accountSettings.error}</p>
+     : accountSettings ? <FirmSettings key={user.uid} database={db} uid={user.uid} profile={accountSettings.profile} />
+     : <p role="status">Loading firm details…</p>}
+ </>:<>
  <div className="page-heading"><div><div className="eyebrow">YOUR BUSINESS, IN ORDER</div><h1>{view==='Merchants'?'Merchants':view==='Overview'?'Workspace overview':'Security & privacy'}</h1><p>{view==='Security'?'Thoughtful protection for the details that matter.':'A clear view of every merchant. One less thing to keep track of.'}</p></div>{view!=='Security'&&<button className="primary" disabled={!configured||!user} onClick={()=>edit(blank())}><Plus size={18}/> Add merchant</button>}</div>
  {error&&!form&&!detail&&<div className="error" role="alert">{error}<button aria-label="Dismiss error" onClick={()=>setError('')}><X size={16}/></button></div>}
  {view==='Security'?<section className="security-page"><div className="security-hero"><ShieldCheck size={38}/><h2>Private by design.</h2><p>Your Google account controls access. Your vault passphrase protects merchant passwords.</p></div>{[['Encrypted credentials','Passwords use AES-256-GCM encryption with a fresh salt and IV. A key is derived from your passphrase using PBKDF2-SHA-256 with 600,000 iterations.'],['Your data belongs to you','Firebase records are separated by account. Deploy the included Firestore rules before saving real merchant information.'],['A passphrase only you know','Use a long, unique passphrase. It is never saved. Forgotten passphrases cannot be recovered; you will need to replace the merchant password.'],['Automatic privacy','Revealed passwords hide after 20 seconds and when you close the record.']].map(([title,text])=><article key={title}><LockKeyhole size={22}/><div><h3>{title}</h3><p>{text}</p></div></article>)}</section>:<>

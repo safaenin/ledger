@@ -132,3 +132,22 @@ test('deleting an unpaid bill removes it from totals and cannot orphan a concurr
  assert.equal(receipts.size, remaining.exists() ? 1 : 0);
  if (remaining.exists()) assert.equal(remaining.data().paidPaise, 1000);
 });
+
+test('firm details persist per account and reject unauthorized access or invalid fields', async () => {
+ const firmRef = (db: Firestore) => doc(db, 'users', 'owner', 'settings', 'firm');
+ const db = database();
+ const firm = { name: 'Example Firm', address: '12 Market Road\nPune, Maharashtra' };
+ assert.equal((await getDoc(firmRef(db))).exists(), false);
+ await setDoc(firmRef(db), firm);
+ await updateDoc(firmRef(db), { name: 'Updated Firm' });
+ assert.deepEqual((await getDoc(firmRef(database()))).data(), { ...firm, name: 'Updated Firm' });
+
+ const anonymous = env.unauthenticatedContext().firestore() as unknown as Firestore;
+ for (const other of [database('other'), anonymous]) {
+  await assertFails(getDoc(firmRef(other)));
+  await assertFails(setDoc(firmRef(other), firm));
+ }
+ await assertFails(setDoc(firmRef(db), { name: 'Missing address' }));
+ await assertFails(setDoc(firmRef(db), { ...firm, address: 'a'.repeat(501) }));
+ await assertFails(setDoc(firmRef(db), { ...firm, extra: true }));
+});

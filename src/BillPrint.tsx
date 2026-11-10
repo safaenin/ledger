@@ -2,11 +2,13 @@ import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { billStatus, dateLabel, isOverdue, money, type Bill, type Payment } from './billing';
+import type { FirmProfile } from './FirmSettings';
 import printStyles from './bill-print.css?raw';
 
 type Props = {
   bill: Bill;
   merchant: { name: string; category: string; gstin: string; email?: string; phone?: string };
+  firmProfile: FirmProfile | null;
   payments: Payment[];
   historyAvailable: boolean;
   onBack: () => void;
@@ -16,9 +18,7 @@ const printPage = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>${printStyles}</style></head><body></body></html>`;
 
-export default function BillPrint({ bill, merchant, payments, historyAvailable, onBack }: Props) {
-  const [title, setTitle] = useState('Service bill');
-  const [sender, setSender] = useState('');
+export default function BillPrint({ bill, merchant, firmProfile, payments, historyAvailable, onBack }: Props) {
   const [footer, setFooter] = useState('');
   const [includeGstin, setIncludeGstin] = useState(true);
   const [includeContact, setIncludeContact] = useState(false);
@@ -40,14 +40,7 @@ export default function BillPrint({ bill, merchant, payments, historyAvailable, 
     <button type="button" className="back-link" onClick={onBack}><ArrowLeft size={15} /> Bill details</button>
     <h2>Print bill</h2>
     <p>Customize the preview, then choose a printer or Save as PDF in the print dialog.</p>
-    <div className="form-grid">
-      <label>Document title
-        <input maxLength={80} value={title} onChange={event => setTitle(event.target.value)} />
-      </label>
-      <label>Business name (optional)
-        <input maxLength={100} value={sender} onChange={event => setSender(event.target.value)} />
-      </label>
-    </div>
+    {!firmProfile && <p className="billing-form-note">Add your firm name and address in Settings to include them on your bills.</p>}
     <label>Footer note (optional)
       <textarea maxLength={500} rows={2} placeholder="Thank-you note or payment instructions" value={footer}
         onChange={event => setFooter(event.target.value)} />
@@ -76,9 +69,11 @@ export default function BillPrint({ bill, merchant, payments, historyAvailable, 
       onLoad={() => setFrameBody(frame.current?.contentDocument?.body ?? null)} />
     {frameBody && createPortal(<main>
       <header>
-        {sender.trim() && <p className="sender">{sender.trim()}</p>}
-        <h1>{title.trim() || 'Service bill'}</h1>
-        <p className="reference">{bill.number}</p>
+        {firmProfile && <div className="firm">
+          <h1>{firmProfile.name}</h1>
+          <p className="firm-address">{firmProfile.address}</p>
+        </div>}
+        {firmProfile ? <p className="reference">{bill.number}</p> : <h1>{bill.number}</h1>}
       </header>
       <section className="overview">
         <div>
