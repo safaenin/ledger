@@ -1,0 +1,39 @@
+@page { size: A4; margin: 16mm; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: #f0f4f2; color: #20342d; font: 14px/1.5 system-ui, sans-serif; }
+main { max-width: 210mm; min-height: 220mm; margin: 0 auto; padding: 7%; background: white; overflow-wrap: anywhere; }
+header { border-top: 5px solid #1e5848; border-bottom: 1px solid #ccd9d2; padding: 20px 0 16px; }
+h1 { font-size: 31px; line-height: 1.15; margin: 0 0 6px; }
+p, dl, dd { margin: 0; }
+.sender { color: #1e5848; font-weight: 650; margin-bottom: 8px; }
+.reference, .services p { color: #485e54; }
+.overview { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin: 24px 0; }
+h2 { margin: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #305649; }
+.merchant-name { font-weight: 700; font-size: 17px; }
+dl div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; }
+dt { color: #485e54; }
+dd { text-align: right; font-weight: 600; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #ccd9d2; vertical-align: top; }
+th { color: #305649; background: #edf4f0; }
+th:last-child, td:last-child { text-align: right; white-space: nowrap; }
+.services strong { display: block; margin-bottom: 4px; white-space: pre-wrap; }
+.totals { width: min(100%, 270px); margin: 14px 0 24px auto; }
+.balance { border-top: 2px solid #1e5848; margin-top: 6px; padding-top: 8px; font-size: 17px; }
+.receipts h2 { margin-top: 18px; }
+footer { border-top: 1px solid #ccd9d2; margin-top: 24px; padding-top: 12px; white-space: pre-wrap; color: #485e54; }
+
+@media screen and (max-width: 440px) {
+  main { padding: 18px; }
+  .overview { grid-template-columns: 1fr; gap: 12px; }
+  th, td { padding: 7px 4px; }
+}
+
+@media print {
+  body { background: white; font-size: 10pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  main { max-width: none; min-height: 0; padding: 0; }
+  header, .overview, .totals, tr, footer { break-inside: avoid; }
+  h2 { break-after: avoid; }
+  thead { display: table-header-group; }
+}

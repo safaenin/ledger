@@ -77,3 +77,8 @@ Update this file after significant feature or architecture decisions. Do not rec
 - Bill details offer Edit bill and Delete bill. Deleting requires confirmation and is allowed only before any payments are recorded.
 - Edits preserve bill numbers and receipts. The bill amount cannot fall below recorded payments, and the issue date locks after the first payment. Transactions protect against stale edits and a payment arriving during deletion.
 - Deploy the app and publish the updated rules to the Ledger Firebase project (ledger-d7173) to enable the feature in production.
+
+## Bill print and PDF export
+- Open a bill and choose Print bill for a live A4 preview. The browser print dialog offers Save as PDF or a printer.
+- Customize the title, business name, footer note, and whether to include GSTIN, merchant contact details, and payment history with references. Contact details and payment history are off by default.
+- The document renders from the selected bill and merchant details in the browser. Portal login IDs, credentials, and internal merchant notes are excluded.

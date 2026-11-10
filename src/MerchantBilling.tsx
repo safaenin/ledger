@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { collection, onSnapshot, type Firestore } from 'firebase/firestore';
-import { ArrowLeft, ArrowUpRight, CalendarDays, Check, CircleDollarSign, FileText, Pencil, Plus, Receipt, Search, Settings2, Trash2, Wallet, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, CalendarDays, Check, CircleDollarSign, FileText, Pencil, Plus, Printer, Receipt, Search, Settings2, Trash2, Wallet, X } from 'lucide-react';
 import { billStatus, cadences, dateLabel, isOverdue, money, parseAmount, paymentMethods, periodEnd, summarize, today, type Bill, type Cadence, type Payment } from './billing';
 import { createBill, deleteBill, editBill, recordPayment } from './billingStore';
+import BillPrint from './BillPrint';
 
-type Props = { database: Firestore; uid: string; merchant: { id: string; name: string; gstin: string; category: string }; onBack: () => void; onManage: () => void };
+type Props = { database: Firestore; uid: string; merchant: { id: string; name: string; gstin: string; category: string; email?: string; phone?: string }; onBack: () => void; onManage: () => void };
 type Draft = { original?: Bill; id: string; description: string; cadence: Cadence; periodStart: string; periodEnd: string; issuedOn: string; dueOn: string; amount: string };
 function newDraft(): Draft {
   const date = today();
@@ -18,6 +19,7 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
   const [draft, setDraft] = useState<Draft | null>(null), [selectedId, setSelectedId] = useState<string | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]), [paymentsLoaded, setPaymentsLoaded] = useState(false), [paymentsError, setPaymentsError] = useState('');
   const [paymentDraft, setPaymentDraft] = useState({ id: crypto.randomUUID(), amount: '', paidOn: today(), method: 'UPI' as Payment['method'], reference: '' });
+  const [printing, setPrinting] = useState(false);
   const [recording, setRecording] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [search, setSearch] = useState(''), [filter, setFilter] = useState('All bills');
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -40,7 +42,7 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
   }, [db, uid, merchant.id, selectedId]);
   useEffect(() => { if (draft || selectedId) dialogRef.current?.showModal(); else dialogRef.current?.close(); }, [draft, selectedId]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 4500); return () => clearTimeout(timer); }, [notice]);
-  function close() { if (busy) return; setDraft(null); setSelectedId(null); setRecording(false); setError(''); }
+  function close() { if (busy) return; setDraft(null); setSelectedId(null); setPrinting(false); setRecording(false); setError(''); }
   function openBill(bill: Bill) { setSelectedId(bill.id); setRecording(false); setError(''); }
   function startPayment() { if (!selected) return; setPaymentDraft({ id: crypto.randomUUID(), amount: ((selected.amountPaise - selected.paidPaise) / 100).toFixed(2), paidOn: today(), method: 'UPI', reference: '' }); setRecording(true); setError(''); }
   function startEdit(bill: Bill) {
@@ -130,7 +132,7 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
       <div className="table-footer">{loaded ? `Showing ${visible.length} of ${bills.length} bills` : 'Waiting for billing data'}<span>Balances update as payments are recorded</span></div>
     </section>
     <div className="billing-help"><CalendarDays size={18} /><p>Raise bills for weekly, monthly, or custom service periods. Recording a payment updates your records; it does not collect money. Bills are raised manually.</p></div>
-    <dialog ref={dialogRef} className="billing-dialog" aria-label={draft?.original ? 'Edit bill' : draft ? 'Raise a bill' : 'Bill and payment details'} onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === e.currentTarget) close(); }}><div className="modal"><button className="close" disabled={busy} aria-label="Close billing dialog" onClick={close}><X size={20} /></button>
+    <dialog ref={dialogRef} className="billing-dialog" aria-label={printing ? 'Print bill' : draft?.original ? 'Edit bill' : draft ? 'Raise a bill' : 'Bill and payment details'} onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === e.currentTarget) close(); }}><div className="modal"><button className="close" disabled={busy} aria-label="Close billing dialog" onClick={close}><X size={20} /></button>
       {draft ? <form onSubmit={submitBill}>
         <div className="modal-icon"><Receipt size={25} /></div>
         <h2>{draft.original ? 'Edit bill' : 'Raise a bill'}</h2>
@@ -182,8 +184,13 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
           <button className="secondary" type="button" onClick={cancelDraft} disabled={busy}>Cancel</button>
           <button className="primary" disabled={busy}>{busy ? 'Saving bill…' : draft.original ? 'Save changes' : 'Raise bill'}<Check size={16} /></button>
         </div>
-      </form> : selected && <><div className="modal-icon"><FileText size={25} /></div><h2>{selected.description}</h2><p>{selected.number} · {merchant.name}</p><div className="bill-detail-top"><span className={`payment-status ${billStatus(selected).toLowerCase().replace(' ', '-')}`}>{billStatus(selected)}</span>{isOverdue(selected) && <span className="overdue-label">Overdue</span>}<span>{selected.cadence}</span></div><div className="bill-detail-amounts"><div><span>Bill amount</span><strong>{money(selected.amountPaise)}</strong></div><div><span>Paid</span><strong>{money(selected.paidPaise)}</strong></div><div><span>Balance</span><strong>{money(selected.amountPaise - selected.paidPaise)}</strong></div></div><dl><div><dt>Service period</dt><dd>{dateLabel(selected.periodStart)} – {dateLabel(selected.periodEnd)}</dd></div><div><dt>Issued on</dt><dd>{dateLabel(selected.issuedOn)}</dd></div><div><dt>Due on</dt><dd>{dateLabel(selected.dueOn)}</dd></div></dl>
+      </form> : selected && (printing ? <BillPrint
+        bill={selected} merchant={merchant} payments={payments}
+        historyAvailable={paymentsLoaded && !paymentsError}
+        onBack={() => setPrinting(false)}
+      /> : <><div className="modal-icon"><FileText size={25} /></div><h2>{selected.description}</h2><p>{selected.number} · {merchant.name}</p><div className="bill-detail-top"><span className={`payment-status ${billStatus(selected).toLowerCase().replace(' ', '-')}`}>{billStatus(selected)}</span>{isOverdue(selected) && <span className="overdue-label">Overdue</span>}<span>{selected.cadence}</span></div><div className="bill-detail-amounts"><div><span>Bill amount</span><strong>{money(selected.amountPaise)}</strong></div><div><span>Paid</span><strong>{money(selected.paidPaise)}</strong></div><div><span>Balance</span><strong>{money(selected.amountPaise - selected.paidPaise)}</strong></div></div><dl><div><dt>Service period</dt><dd>{dateLabel(selected.periodStart)} – {dateLabel(selected.periodEnd)}</dd></div><div><dt>Issued on</dt><dd>{dateLabel(selected.issuedOn)}</dd></div><div><dt>Due on</dt><dd>{dateLabel(selected.dueOn)}</dd></div></dl>
       {!recording && <div className="modal-actions bill-actions">
+        <button className="secondary" disabled={busy} onClick={() => setPrinting(true)}><Printer size={15} /> Print bill</button>
         <button className="secondary" disabled={busy} onClick={() => startEdit(selected)}><Pencil size={15} /> Edit bill</button>
         {selected.paidPaise === 0 && selected.lastPaymentId === '' &&
           <button className="secondary danger" disabled={busy} onClick={() => void removeBill(selected)}><Trash2 size={15} /> {busy ? 'Deleting…' : 'Delete bill'}</button>}
@@ -191,7 +198,7 @@ export default function MerchantBilling({ database: db, uid, merchant, onBack, o
       {!recording && selected.paidPaise > 0 && <p className="billing-form-note">Bills with recorded payments are kept with their payment history.</p>}
       {!recording && error && <div className="error" role="alert">{error}</div>}
       {recording ? <form className="payment-form" onSubmit={submitPayment}><h3>Record a payment</h3><div className="form-grid"><label>Payment amount (₹)<input required inputMode="decimal" type="text" value={paymentDraft.amount} onChange={e => setPaymentDraft({ ...paymentDraft, amount: e.target.value })} /></label><label>Payment date<input required type="date" min={selected.issuedOn} max={today()} value={paymentDraft.paidOn} onChange={e => setPaymentDraft({ ...paymentDraft, paidOn: e.target.value })} /></label><label>Payment method<select value={paymentDraft.method} onChange={e => setPaymentDraft({ ...paymentDraft, method: e.target.value as Payment['method'] })}>{paymentMethods.map(method => <option key={method}>{method}</option>)}</select></label><label>Reference (optional)<input maxLength={200} placeholder="UTR, receipt number…" value={paymentDraft.reference} onChange={e => setPaymentDraft({ ...paymentDraft, reference: e.target.value })} /></label></div>{error && <div className="error" role="alert">{error}</div>}<div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={() => { setRecording(false); setError(''); }}>Cancel</button><button className="primary" disabled={busy}>{busy ? 'Recording…' : 'Confirm payment'}<Check size={16} /></button></div></form> : selected.paidPaise < selected.amountPaise && <button className="primary record-payment" onClick={startPayment}><Plus size={16} /> Record payment</button>}
-      <section className="payment-history"><h3>Payment history <span>{paymentsLoaded ? payments.length : '…'}</span></h3>{paymentsError ? <p className="overdue-label" role="alert">{paymentsError}</p> : !paymentsLoaded ? <p>Loading payments…</p> : !payments.length ? <p>No payments recorded for this bill yet.</p> : payments.map(payment => <article key={payment.id}><span className="payment-check"><Check size={15} /></span><div><strong>{money(payment.amountPaise)}</strong><p>{dateLabel(payment.paidOn)} · {payment.method}</p>{payment.reference && <p className="payment-reference">{payment.reference}</p>}</div><span>Received</span></article>)}</section></>}
+      <section className="payment-history"><h3>Payment history <span>{paymentsLoaded ? payments.length : '…'}</span></h3>{paymentsError ? <p className="overdue-label" role="alert">{paymentsError}</p> : !paymentsLoaded ? <p>Loading payments…</p> : !payments.length ? <p>No payments recorded for this bill yet.</p> : payments.map(payment => <article key={payment.id}><span className="payment-check"><Check size={15} /></span><div><strong>{money(payment.amountPaise)}</strong><p>{dateLabel(payment.paidOn)} · {payment.method}</p>{payment.reference && <p className="payment-reference">{payment.reference}</p>}</div><span>Received</span></article>)}</section></>)}
       {!draft && selectedId && !selected && <p role="status">This bill is no longer available. Close this window to return to the bill list.</p>}
     </div></dialog>
   </section>;
