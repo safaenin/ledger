@@ -42,7 +42,7 @@ export async function recordPayment(db: Firestore, uid: string, merchantId: stri
   }
 }
 
-type BillChanges = Pick<Bill, 'description' | 'cadence' | 'periodStart' | 'periodEnd' | 'issuedOn' | 'dueOn' | 'amountPaise'>;
+type BillChanges = Pick<Bill, 'description' | 'cadence' | 'periodStart' | 'periodEnd' | 'issuedOn' | 'dueOn' | 'amountPaise' | 'merchantAddress'>;
 
 export async function editBill(db: Firestore, uid: string, merchantId: string, original: Bill, changes: BillChanges) {
   const billRef = doc(db, 'users', uid, 'merchants', merchantId, 'bills', original.id);
@@ -89,5 +89,6 @@ function samePayment(a: Payment, b: Payment) {
   return a.id === b.id && a.amountPaise === b.amountPaise && a.paidOn === b.paidOn && a.method === b.method && a.reference === b.reference;
 }
 function sameBill(a: Bill, b: Bill) {
-  return a.id === b.id && a.number === b.number && a.description === b.description && a.cadence === b.cadence && a.periodStart === b.periodStart && a.periodEnd === b.periodEnd && a.issuedOn === b.issuedOn && a.dueOn === b.dueOn && a.amountPaise === b.amountPaise && a.currency === b.currency;
+  return a.id === b.id && a.number === b.number && a.description === b.description && a.cadence === b.cadence && a.periodStart === b.periodStart && a.periodEnd === b.periodEnd && a.issuedOn === b.issuedOn && a.dueOn === b.dueOn && a.amountPaise === b.amountPaise && a.currency === b.currency
+    && (a.merchantAddress ?? '') === (b.merchantAddress ?? '');
 }

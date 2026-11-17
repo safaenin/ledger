@@ -4,6 +4,7 @@ export type Bill = {
   id: string; number: string; description: string; cadence: Cadence;
   periodStart: string; periodEnd: string; issuedOn: string; dueOn: string;
   amountPaise: number; paidPaise: number; currency: 'INR';
+  merchantAddress?: string;
   lastPaymentId: string; createdAt: string; updatedAt: string;
 };
 export const paymentMethods = ['UPI', 'Bank transfer', 'Cash', 'Cheque', 'Other'] as const;

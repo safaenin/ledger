@@ -40,3 +40,5 @@ footer { border-top: 1px solid #ccd9d2; margin-top: 24px; padding-top: 12px; whi
 .firm { margin-bottom: 16px; }
 .firm h1 { font-size: 36px; color: #1e5848; }
 .firm-address { white-space: pre-line; color: #485e54; }
+
+.merchant-address { white-space: pre-line; overflow-wrap: anywhere; }

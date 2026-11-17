@@ -42,3 +42,5 @@
   .sidebar nav button { min-height: 44px; padding-block: 6px; }
   .sidebar .profile { padding-block: 10px; }
 }
+
+.merchant-address { white-space: pre-line; overflow-wrap: anywhere; }

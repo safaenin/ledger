@@ -151,3 +151,27 @@ test('firm details persist per account and reject unauthorized access or invalid
  await assertFails(setDoc(firmRef(db), { ...firm, address: 'a'.repeat(501) }));
  await assertFails(setDoc(firmRef(db), { ...firm, extra: true }));
 });
+
+test('merchant addresses are optional and bills preserve the selected address through payments and edits', async () => {
+ const db = await setup();
+ const originalAddress = '12 Market Road\nPune, Maharashtra';
+ await updateDoc(merchantRef(db), { address: originalAddress });
+
+ const addressedBill = { ...bill('addressed'), merchantAddress: originalAddress };
+ await createBill(db, 'owner', 'merchant-one', addressedBill);
+ await createBill(db, 'owner', 'merchant-one', addressedBill);
+ await assert.rejects(createBill(db, 'owner', 'merchant-one', { ...addressedBill, merchantAddress: 'Different address' }));
+ await updateDoc(merchantRef(db), { address: '34 Station Road' });
+ await recordPayment(db, 'owner', 'merchant-one', addressedBill.id, payment('addressed-payment', 1000));
+ const ref = billRef(db, addressedBill.id);
+ assert.equal((await getDoc(ref)).data()?.merchantAddress, originalAddress);
+ assert.equal((await getDoc(billRef(db))).data()?.merchantAddress, undefined);
+
+ const { description, cadence, periodStart, periodEnd, issuedOn, dueOn, amountPaise } = addressedBill;
+ await editBill(db, 'owner', 'merchant-one', addressedBill, {
+  description, cadence, periodStart, periodEnd, issuedOn, dueOn, amountPaise, merchantAddress: '',
+ });
+ assert.equal((await getDoc(ref)).data()?.merchantAddress, '');
+ await assertFails(updateDoc(merchantRef(db), { address: 123 }));
+ await assertFails(updateDoc(ref, { merchantAddress: 'a'.repeat(501) }));
+});

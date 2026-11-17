@@ -7,7 +7,7 @@ import printStyles from './bill-print.css?raw';
 
 type Props = {
   bill: Bill;
-  merchant: { name: string; category: string; gstin: string; email?: string; phone?: string };
+  merchant: { name: string; category: string; gstin: string; email?: string; phone?: string; address?: string };
   firmProfile: FirmProfile | null;
   payments: Payment[];
   historyAvailable: boolean;
@@ -20,6 +20,8 @@ const printPage = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 
 export default function BillPrint({ bill, merchant, firmProfile, payments, historyAvailable, onBack }: Props) {
   const [footer, setFooter] = useState('');
+  const merchantAddress = bill.merchantAddress || merchant.address?.trim();
+  const [includeAddress, setIncludeAddress] = useState(!!bill.merchantAddress);
   const [includeGstin, setIncludeGstin] = useState(true);
   const [includeContact, setIncludeContact] = useState(false);
   const [includePayments, setIncludePayments] = useState(false);
@@ -47,6 +49,9 @@ export default function BillPrint({ bill, merchant, firmProfile, payments, histo
     </label>
     <fieldset className="bill-print-options">
       <legend>Include in print</legend>
+      {merchantAddress && <label>
+        <input type="checkbox" checked={includeAddress} onChange={event => setIncludeAddress(event.target.checked)} /> Merchant address
+      </label>}
       {merchant.gstin && <label>
         <input type="checkbox" checked={includeGstin} onChange={event => setIncludeGstin(event.target.checked)} /> Merchant GSTIN
       </label>}
@@ -80,6 +85,7 @@ export default function BillPrint({ bill, merchant, firmProfile, payments, histo
           <h2>Billed to</h2>
           <p className="merchant-name">{merchant.name}</p>
           <p>{merchant.category}</p>
+          {includeAddress && merchantAddress && <p className="merchant-address">{merchantAddress}</p>}
           {includeGstin && merchant.gstin && <p>GSTIN {merchant.gstin}</p>}
           {includeContact && <>
             {merchant.email && <p>{merchant.email}</p>}
